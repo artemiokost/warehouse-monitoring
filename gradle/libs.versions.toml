@@ -24,7 +24,7 @@ pekko-stream = { group = "org.apache.pekko", name = "pekko-stream_3", version.re
 pekko-stream-typed = { group = "org.apache.pekko", name = "pekko-stream-typed_3", version.ref = "pekko" }
 
 [bundles]
-central = [
+common = [
     "jnats",
     "pekko-actor-typed",
     "pekko-slf4j",
@@ -34,14 +34,6 @@ central = [
 test = [
     "kotlin-test-junit5",
     "pekko-actor-testkit-typed"
-]
-warehouse = [
-    "jnats",
-    "pekko-actor-typed",
-    "pekko-connectors-udp",
-    "pekko-slf4j",
-    "pekko-stream",
-    "pekko-stream-typed"
 ]
 
 [plugins]

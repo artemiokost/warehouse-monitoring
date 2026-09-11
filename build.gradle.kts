@@ -8,7 +8,6 @@ plugins {
 val catalog = libs
 
 subprojects {
-    apply(plugin = "java-library")
     apply(plugin = "org.jetbrains.kotlin.jvm")
 
     group = "app"

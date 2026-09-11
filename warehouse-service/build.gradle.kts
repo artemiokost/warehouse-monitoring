@@ -3,8 +3,8 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":protocol"))
-    implementation(libs.bundles.warehouse)
+    implementation(project(":common"))
+    implementation(libs.pekko.connectors.udp)
     runtimeOnly(libs.logback.classic)
 }
 

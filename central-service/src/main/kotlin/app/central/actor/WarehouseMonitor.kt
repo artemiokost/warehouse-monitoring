@@ -1,56 +1,37 @@
 package app.central.actor
 
-import app.central.alarm.Alarm
-import app.central.alarm.Thresholds
-import app.protocol.Measurement
+import app.common.protocol.Measurement
+import app.common.protocol.Sensor
+import app.common.protocol.SensorType
+import org.apache.pekko.Done
 import org.apache.pekko.actor.typed.ActorRef
 import org.apache.pekko.actor.typed.Behavior
-import org.apache.pekko.actor.typed.javadsl.AbstractBehavior
-import org.apache.pekko.actor.typed.javadsl.ActorContext
 import org.apache.pekko.actor.typed.javadsl.Behaviors
-import org.apache.pekko.actor.typed.javadsl.Receive
 
-class WarehouseMonitor private constructor(
-    context: ActorContext<Command>,
-    private val warehouseId: String,
-    private val thresholds: Thresholds,
-    private val reporter: ActorRef<AlarmReporter.Command>,
-) : AbstractBehavior<WarehouseMonitor.Command>(context) {
+object WarehouseMonitor {
 
-    sealed interface Command
+    data class Observe(val measurement: Measurement, val replyTo: ActorRef<Done>)
 
-    data class Observe(val measurement: Measurement, val ackTo: ActorRef<WarehouseRegistry.Ack>) : Command
+    fun create(
+        thresholds: Map<SensorType, Double>,
+        reporter: ActorRef<AlarmReporter.Command>,
+    ): Behavior<Observe> = Behaviors.setup {
+        val breaching = mutableSetOf<Sensor>()
 
-    private val breaching = mutableSetOf<String>()
+        Behaviors.receiveMessage { (measurement, replyTo) ->
+            val threshold = thresholds.getValue(measurement.sensor.type)
 
-    override fun createReceive(): Receive<Command> = newReceiveBuilder()
-        .onMessage(Observe::class.java, ::onObserve)
-        .build()
+            when {
+                measurement.value > threshold && breaching.add(measurement.sensor) -> {
+                    reporter.tell(AlarmReporter.Raised(measurement))
+                }
+                measurement.value <= threshold && breaching.remove(measurement.sensor) -> {
+                    reporter.tell(AlarmReporter.Cleared(measurement))
+                }
+            }
 
-    private fun onObserve(command: Observe): Behavior<Command> {
-        val measurement = command.measurement
-        val threshold = thresholds.limitOf(measurement.kind)
-        val alarm = Alarm(warehouseId, measurement.sensorId, measurement.kind, measurement.value, threshold, measurement.at)
-
-        when {
-            measurement.value > threshold && breaching.add(measurement.sensorId) ->
-                reporter.tell(AlarmReporter.Raised(alarm))
-
-            measurement.value <= threshold && breaching.remove(measurement.sensorId) ->
-                reporter.tell(AlarmReporter.Cleared(alarm))
-        }
-
-        command.ackTo.tell(WarehouseRegistry.Ack)
-        return this
-    }
-
-    companion object {
-        fun create(
-            warehouseId: String,
-            thresholds: Thresholds,
-            reporter: ActorRef<AlarmReporter.Command>,
-        ): Behavior<Command> = Behaviors.setup { context ->
-            WarehouseMonitor(context, warehouseId, thresholds, reporter)
+            replyTo.tell(Done.done())
+            Behaviors.same()
         }
     }
 }

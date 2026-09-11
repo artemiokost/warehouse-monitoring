@@ -3,8 +3,7 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":protocol"))
-    implementation(libs.bundles.central)
+    implementation(project(":common"))
     runtimeOnly(libs.logback.classic)
 }
 

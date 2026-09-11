@@ -1,38 +1,23 @@
 package app.central.actor
 
-import app.central.alarm.Alarm
+import app.common.protocol.Measurement
+import app.common.protocol.SensorType
 import org.apache.pekko.actor.typed.Behavior
-import org.apache.pekko.actor.typed.javadsl.AbstractBehavior
-import org.apache.pekko.actor.typed.javadsl.ActorContext
 import org.apache.pekko.actor.typed.javadsl.Behaviors
-import org.apache.pekko.actor.typed.javadsl.Receive
 
-class AlarmReporter private constructor(
-    context: ActorContext<Command>,
-) : AbstractBehavior<AlarmReporter.Command>(context) {
+object AlarmReporter {
 
     sealed interface Command
 
-    data class Cleared(val alarm: Alarm) : Command
+    data class Raised(val measurement: Measurement) : Command
 
-    data class Raised(val alarm: Alarm) : Command
+    data class Cleared(val measurement: Measurement) : Command
 
-    override fun createReceive(): Receive<Command> = newReceiveBuilder()
-        .onMessage(Cleared::class.java, ::onCleared)
-        .onMessage(Raised::class.java, ::onRaised)
-        .build()
-
-    private fun onCleared(command: Cleared): Behavior<Command> {
-        context.log.info("CLEARED {}", command.alarm.summary)
-        return this
-    }
-
-    private fun onRaised(command: Raised): Behavior<Command> {
-        context.log.warn("ALARM {}", command.alarm.summary)
-        return this
-    }
-
-    companion object {
-        fun create(): Behavior<Command> = Behaviors.setup { context -> AlarmReporter(context) }
+    fun create(thresholds: Map<SensorType, Double>): Behavior<Command> = Behaviors.receive { context, command ->
+        when (command) {
+            is Raised -> context.log.warn("ALARM {}", command.measurement.describe(thresholds))
+            is Cleared -> context.log.info("CLEARED {}", command.measurement.describe(thresholds))
+        }
+        Behaviors.same()
     }
 }
