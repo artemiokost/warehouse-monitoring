@@ -10,4 +10,8 @@ data class Measurement(
     val kind: SensorKind,
     val value: Double,
     val at: Instant,
-)
+) {
+    init {
+        Subjects.checkWarehouseId(warehouseId)
+    }
+}

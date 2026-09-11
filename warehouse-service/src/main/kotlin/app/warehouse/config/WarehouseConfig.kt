@@ -1,6 +1,7 @@
 package app.warehouse.config
 
 import app.protocol.SensorKind
+import app.protocol.Subjects
 import com.typesafe.config.Config
 
 data class SensorBinding(val kind: SensorKind, val host: String, val port: Int)
@@ -14,7 +15,7 @@ data class WarehouseConfig(
     companion object {
         fun from(config: Config): WarehouseConfig = config.getConfig("warehouse").let { section ->
             WarehouseConfig(
-                id = section.getString("id"),
+                id = Subjects.checkWarehouseId(section.getString("id")),
                 natsUrl = section.getString("nats-url"),
                 sensors = section.getConfigList("sensors").map { sensor ->
                     SensorBinding(

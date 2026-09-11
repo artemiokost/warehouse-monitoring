@@ -19,7 +19,7 @@ class WarehouseMonitor private constructor(
 
     sealed interface Command
 
-    data class Observe(val measurement: Measurement) : Command
+    data class Observe(val measurement: Measurement, val ackTo: ActorRef<WarehouseRegistry.Ack>) : Command
 
     private val breaching = mutableSetOf<String>()
 
@@ -29,8 +29,8 @@ class WarehouseMonitor private constructor(
 
     private fun onObserve(command: Observe): Behavior<Command> {
         val measurement = command.measurement
-        val threshold = thresholds.limitOf(measurement.kind) ?: return this
-        val alarm = Alarm(warehouseId, measurement.sensorId, measurement.kind, measurement.value, threshold)
+        val threshold = thresholds.limitOf(measurement.kind)
+        val alarm = Alarm(warehouseId, measurement.sensorId, measurement.kind, measurement.value, threshold, measurement.at)
 
         when {
             measurement.value > threshold && breaching.add(measurement.sensorId) ->
@@ -40,6 +40,7 @@ class WarehouseMonitor private constructor(
                 reporter.tell(AlarmReporter.Cleared(alarm))
         }
 
+        command.ackTo.tell(WarehouseRegistry.Ack)
         return this
     }
 

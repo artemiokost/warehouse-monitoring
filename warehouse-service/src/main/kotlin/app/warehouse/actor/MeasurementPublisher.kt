@@ -4,12 +4,8 @@ import app.protocol.Measurement
 import app.protocol.MeasurementCodec
 import app.protocol.Subjects
 import io.nats.client.Connection
-import io.nats.client.Nats
-import io.nats.client.Options
-import java.time.Duration
+import org.apache.pekko.actor.typed.ActorRef
 import org.apache.pekko.actor.typed.Behavior
-import org.apache.pekko.actor.typed.PostStop
-import org.apache.pekko.actor.typed.SupervisorStrategy
 import org.apache.pekko.actor.typed.javadsl.AbstractBehavior
 import org.apache.pekko.actor.typed.javadsl.ActorContext
 import org.apache.pekko.actor.typed.javadsl.Behaviors
@@ -22,40 +18,45 @@ class MeasurementPublisher private constructor(
 
     sealed interface Command
 
-    data class Publish(val measurement: Measurement) : Command
+    /** Demand signal back to the sensor stream: the next measurement may be sent. */
+    data object Ack
+
+    data class IngressStarted(val ackTo: ActorRef<Ack>) : Command
+
+    data class IngressStopped(val cause: Throwable?) : Command
+
+    data class Publish(val measurement: Measurement, val ackTo: ActorRef<Ack>) : Command
 
     override fun createReceive(): Receive<Command> = newReceiveBuilder()
+        .onMessage(IngressStarted::class.java, ::onIngressStarted)
+        .onMessage(IngressStopped::class.java, ::onIngressStopped)
         .onMessage(Publish::class.java, ::onPublish)
-        .onSignal(PostStop::class.java, ::onPostStop)
         .build()
 
-    private fun onPostStop(signal: PostStop): Behavior<Command> {
-        connection.close()
+    private fun onIngressStarted(command: IngressStarted): Behavior<Command> {
+        command.ackTo.tell(Ack)
+        return this
+    }
+
+    private fun onIngressStopped(command: IngressStopped): Behavior<Command> {
+        context.log.error("Sensor ingress stopped", command.cause)
         return this
     }
 
     private fun onPublish(command: Publish): Behavior<Command> {
         val measurement = command.measurement
-        connection.publish(Subjects.measurement(measurement.warehouseId), MeasurementCodec.encode(measurement))
+
+        // An element that is never acknowledged stalls its stream, so the ack is unconditional: a
+        // measurement the client cannot buffer (broker unreachable for long) is dropped, not retried.
+        runCatching { connection.publish(Subjects.measurement(measurement.warehouseId), MeasurementCodec.encode(measurement)) }
+            .onFailure { context.log.warn("Dropped measurement from {}: {}", measurement.sensorId, it.toString()) }
+        command.ackTo.tell(Ack)
+
         return this
     }
 
     companion object {
-        private val MAX_BACKOFF = Duration.ofSeconds(30)
-        private val MIN_BACKOFF = Duration.ofSeconds(1)
-        private val RECONNECT_WAIT = Duration.ofSeconds(1)
-        private const val RANDOM_FACTOR = 0.2
-
-        fun create(natsUrl: String): Behavior<Command> = Behaviors
-            .supervise(Behaviors.setup<Command> { context -> MeasurementPublisher(context, connect(natsUrl)) })
-            .onFailure(SupervisorStrategy.restartWithBackoff(MIN_BACKOFF, MAX_BACKOFF, RANDOM_FACTOR))
-
-        private fun connect(natsUrl: String): Connection = Nats.connect(
-            Options.Builder()
-                .server(natsUrl)
-                .reconnectWait(RECONNECT_WAIT)
-                .maxReconnects(-1)
-                .build()
-        )
+        fun create(connection: Connection): Behavior<Command> =
+            Behaviors.setup { context -> MeasurementPublisher(context, connection) }
     }
 }

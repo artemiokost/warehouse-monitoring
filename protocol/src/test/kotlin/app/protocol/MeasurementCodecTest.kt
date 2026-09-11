@@ -18,4 +18,11 @@ class MeasurementCodecTest {
     fun `rejects foreign payloads`() {
         assertNull(MeasurementCodec.decode("not json".encodeToByteArray()))
     }
+
+    @Test
+    fun `rejects a warehouse id that is not a subject token`() {
+        val payload = """{"warehouseId":"w 1","sensorId":"t1","kind":"TEMPERATURE","value":1.0,"at":"2024-01-01T00:00:00Z"}"""
+
+        assertNull(MeasurementCodec.decode(payload.encodeToByteArray()))
+    }
 }

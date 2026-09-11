@@ -17,13 +17,32 @@ class WarehouseRegistry private constructor(
 
     sealed interface Command
 
-    data class Track(val measurement: Measurement) : Command
+    /** Demand signal back to the ingress stream, sent by the monitor once the measurement is applied. */
+    data object Ack
+
+    data class IngressStarted(val ackTo: ActorRef<Ack>) : Command
+
+    data class IngressStopped(val cause: Throwable?) : Command
+
+    data class Track(val measurement: Measurement, val ackTo: ActorRef<Ack>) : Command
 
     private val monitors = mutableMapOf<String, ActorRef<WarehouseMonitor.Command>>()
 
     override fun createReceive(): Receive<Command> = newReceiveBuilder()
+        .onMessage(IngressStarted::class.java, ::onIngressStarted)
+        .onMessage(IngressStopped::class.java, ::onIngressStopped)
         .onMessage(Track::class.java, ::onTrack)
         .build()
+
+    private fun onIngressStarted(command: IngressStarted): Behavior<Command> {
+        command.ackTo.tell(Ack)
+        return this
+    }
+
+    private fun onIngressStopped(command: IngressStopped): Behavior<Command> {
+        context.log.error("Measurement ingress stopped", command.cause)
+        return this
+    }
 
     private fun onTrack(command: Track): Behavior<Command> {
         val warehouseId = command.measurement.warehouseId
@@ -32,7 +51,7 @@ class WarehouseRegistry private constructor(
             .getOrPut(warehouseId) {
                 context.spawn(WarehouseMonitor.create(warehouseId, thresholds, reporter), "warehouse-$warehouseId")
             }
-            .tell(WarehouseMonitor.Observe(command.measurement))
+            .tell(WarehouseMonitor.Observe(command.measurement, command.ackTo))
 
         return this
     }
